@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import os
 import shutil
@@ -8,6 +9,15 @@ from utils.nlp_pipeline import clean_text, extract_skills
 from utils.scoring import calculate_similarity
 
 app = FastAPI(title="AI Resume Screening API")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allow all for research/academic demo
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Ensure research data directory exists
 DATA_DIR = "data"
