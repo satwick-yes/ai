@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+streamlit
+spacy
+scikit-learn
+PyPDF2
+python-docx
+pandas
+numpy
+python-multipart
+pydantic
+jinja2
+requests
+matplotlib
+seaborn
+ipykernel
+notebook
