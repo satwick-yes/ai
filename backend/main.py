@@ -2,126 +2,105 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import os
-import shutil
-import json
-from utils.extraction import extract_text
-from utils.nlp_pipeline import clean_text, extract_skills
-from utils.scoring import calculate_similarity
 
-app = FastAPI(title="AI Resume Screening API")
+# Import utility functions
+from utils.extraction import get_text_from_file
+from utils.nlp_pipeline import calculate_hybrid_similarity, extract_skills, expand_job_with_web_skills
 
-# Configure CORS
+app = FastAPI(title="AI Resume Screening System")
+
+# CORS Setup for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all for research/academic demo
+    allow_origins=["*"], # In production, restrict this to the frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Ensure research data directory exists
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-@app.post("/upload_resumes")
-async def upload_resumes(files: List[UploadFile] = File(...)):
+@app.post("/rank-resumes")
+async def rank_resumes(
+    job_description: str = Form(...),
+    resumes: List[UploadFile] = File(...)
+):
     """
-    Endpoint to upload resumes and extract text.
-    Saves extracted text to the data/ directory for processing.
+    Endpoint to receive job description and multiple resume files.
+    Returns a ranked list of candidates with scores and extracted skills.
     """
-    uploaded_files = []
-    for file in files:
-        file_content = await file.read()
-        extracted_text = extract_text(file.name, file_content)
+    if not job_description.strip():
+        raise HTTPException(status_code=400, detail="Job description cannot be empty.")
         
-        if extracted_text:
-            # Save extracted text to data/ with .txt extension for persistence
-            safe_name = "".join(x for x in file.name if x.isalnum() or x in "._- ")
-            text_file_path = os.path.join(DATA_DIR, f"{safe_name}.txt")
-            with open(text_file_path, "w", encoding="utf-8") as f:
-                f.write(extracted_text)
-            uploaded_files.append(file.name)
-            
-    return {"message": "Resumes uploaded and text extracted", "files": uploaded_files}
+    if not resumes or len(resumes) == 0:
+        raise HTTPException(status_code=400, detail="No resumes uploaded.")
 
-@app.post("/analyze")
-async def analyze():
-    """
-    Endpoint to perform NLP cleaning and skill extraction on all saved resumes.
-    """
-    analysis_results = []
-    if not os.path.exists(DATA_DIR):
-        return {"results": []}
+    # List to store results
+    candidates = []
 
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith(".txt"):
-            filepath = os.path.join(DATA_DIR, filename)
-            with open(filepath, "r", encoding="utf-8") as f:
-                raw_text = f.read()
+    # Iterate through all uploaded resumes
+    for resume in resumes:
+        try:
+            filename = resume.filename
+            content = await resume.read()
             
-            cleaned = clean_text(raw_text)
-            skills = extract_skills(raw_text)
+            # 1. Text Extraction
+            text = get_text_from_file(filename, content)
+            if not text or len(text.strip()) < 50:
+                print(f"Skipping {filename}: Insufficient text extracted.")
+                continue 
+                
+            # 2. Skill Extraction (Bonus)
+            skills = extract_skills(text)
             
-            analysis_results.append({
-                "candidate": filename.replace(".txt", ""),
-                "skills": skills,
-                "cleaned_text": cleaned
+            # 3. Store in list for batch similarity calculation
+            candidates.append({
+                "name": filename,
+                "text": text,
+                "skills": skills
             })
-            
-    return {"analysis": analysis_results}
+        except Exception as e:
+            print(f"Error processing {resume.filename}: {e}")
+            continue
 
-@app.post("/rank_candidates")
-async def rank_candidates(job_description: str = Form(...)):
-    """
-    Endpoint to rank candidates against a job description.
-    """
-    if not os.path.exists(DATA_DIR):
-        raise HTTPException(status_code=400, detail="No resumes uploaded yet.")
+    if not candidates:
+        raise HTTPException(status_code=400, detail="Could not extract valid text from any of the uploaded resumes.")
 
-    resumes = []
-    names = []
-    
-    # Pre-extract JD skills
-    jd_skills = set(extract_skills(job_description))
-    cleaned_jd = clean_text(job_description)
+    try:
+        # 4. Web skill expansion
+        web_skills = expand_job_with_web_skills(job_description)
 
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith(".txt"):
-            filepath = os.path.join(DATA_DIR, filename)
-            with open(filepath, "r", encoding="utf-8") as f:
-                raw_text = f.read()
-            
-            resumes.append(clean_text(raw_text))
-            names.append(filename.replace(".txt", ""))
+        # 5. Extract text only for similarity computation
+        resumes_text_list = [c["text"] for c in candidates]
+        
+        # 6. Compute scores
+        detailed_scores = calculate_hybrid_similarity(job_description, resumes_text_list, web_skills=web_skills)
+        
+        # 7. Build final response
+        results = []
+        for i, candidate in enumerate(candidates):
+            scoring_detail = detailed_scores[i]
+            score = scoring_detail["total_score"]
+            results.append({
+                "name": candidate["name"],
+                "score": round(score * 100, 2),
+                "skills": scoring_detail["extracted_skills"],  # Override with deeply extracted skills
+                "relevance": "High" if score > 0.6 else ("Medium" if score > 0.3 else "Low"),
+                "semantic_score": round(scoring_detail["semantic_score"] * 100, 2),
+                "skill_score": round(scoring_detail["skill_score"] * 100, 2),
+                "keyword_score": round(scoring_detail["keyword_score"] * 100, 2),
+                "matched_skills": scoring_detail["matched_skills"],
+                "missing_skills": scoring_detail["missing_skills"]
+            })
 
-    if not resumes:
-        return {"ranked_candidates": []}
-
-    # Similarity calculation
-    scores = calculate_similarity(cleaned_jd, resumes)
-    
-    ranked_list = []
-    for i in range(len(names)):
-        # Skill Matching
-        filepath = os.path.join(DATA_DIR, names[i] + ".txt")
-        with open(filepath, "r", encoding="utf-8") as f:
-            raw_resume_text = f.read()
-            
-        candidate_skills = set(extract_skills(raw_resume_text))
-        matching_skills = candidate_skills.intersection(jd_skills)
-        missing_skills = jd_skills.difference(candidate_skills)
-
-        ranked_list.append({
-            "candidate": names[i],
-            "score": scores[i],
-            "matching_skills": sorted(list(matching_skills)),
-            "missing_skills": sorted(list(missing_skills))
-        })
-
-    # Sort by score descending
-    ranked_list = sorted(ranked_list, key=lambda x: x['score'], reverse=True)
-    
-    return {"ranked_candidates": ranked_list}
+        # 8. Rank by score descending
+        results.sort(key=lambda x: x["score"], reverse=True)
+        
+        return {
+            "candidates": results,
+            "web_skills": web_skills
+        }
+    except Exception as e:
+        print(f"Error during ranking: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred during the ranking process.")
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,47 +1,43 @@
-import io
 import PyPDF2
-from docx import Document
-import logging
+import docx
+import os
 
-def extract_text_from_pdf(file_content):
+def extract_text_from_pdf(file_stream):
     """
-    Extracts text from a PDF file byte stream.
+    Extract text from a PDF file stream.
     """
-    text = ""
     try:
-        reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+        reader = PyPDF2.PdfReader(file_stream)
+        text = ""
         for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
+            text += page.extract_text() + "\n"
+        return text
     except Exception as e:
-        logging.error(f"Error extracting PDF: {e}")
-    return text
+        print(f"Error extracting PDF: {e}")
+        return ""
 
-def extract_text_from_docx(file_content):
+def extract_text_from_docx(file_stream):
     """
-    Extracts text from a DOCX file byte stream.
+    Extract text from a DOCX file stream.
     """
-    text = ""
     try:
-        doc = Document(io.BytesIO(file_content))
-        for para in doc.paragraphs:
-            text += para.text + "\n"
+        doc = docx.Document(file_stream)
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text
     except Exception as e:
-        logging.error(f"Error extracting DOCX: {e}")
-    return text
+        print(f"Error extracting DOCX: {e}")
+        return ""
 
-def extract_text(file_name, file_content):
+def get_text_from_file(file_name, file_content):
     """
-    Router for text extraction based on file extension.
+    Determine file type and extract text.
     """
-    if file_name.lower().endswith('.pdf'):
-        return extract_text_from_pdf(file_content)
-    elif file_name.lower().endswith('.docx'):
-        return extract_text_from_docx(file_content)
+    from io import BytesIO
+    file_stream = BytesIO(file_content)
+    
+    if file_name.endswith('.pdf'):
+        return extract_text_from_pdf(file_stream)
+    elif file_name.endswith('.docx'):
+        return extract_text_from_docx(file_stream)
     else:
-        # Assume plain text for other types
-        try:
-            return file_content.decode('utf-8')
-        except:
-            return ""
+        return ""
