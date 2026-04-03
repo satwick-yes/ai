@@ -16,3 +16,6 @@ requests
 duckduckgo-search
 yake
 sentence-transformers
+pymupdf
+easyocr
+opencv-python-headless

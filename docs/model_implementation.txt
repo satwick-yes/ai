@@ -1,0 +1,24 @@
+# Model Implementation Overview
+
+The ResumeAI system implements a multi-model hybrid approach for candidate ranking, maximizing both contextual understanding and keyword precision.
+
+## 1. Transformer Architecture
+The core semantic engine uses **SentenceTransformers** (`all-MiniLM-L6-v2`), a lightweight yet high-performance BERT-based model.
+- **Dimensionality:** 384 dimensions.
+- **Max Tokens:** 512 tokens.
+- **Evaluation:** Uses **Cosine Similarity** to compare the dense vector embeddings of a Job Description with multiple Resume candidates.
+
+## 2. Hybrid Scoring System (Weighted)
+Final Score = (Semantic Score × 50%) + (Skill Score × 30%) + (Keyword Score × 20%).
+- **Semantic (50%):** Measures pure contextual similarity (e.g., "Doctor" ≈ "Physician").
+- **Skills (30%):** Measures matching specific discovered skills (e.g., "Python", "Nursing").
+- **Keywords (20%):** Measures exact word overlaps using TF-IDF.
+
+## 3. Dynamic Skill Ontology
+- **Web-Enhanced Discovery:** Automatically searches DuckDuckGo for industry-standard requirements of any given job title.
+- **YAKE & spaCy NER:** Dual-layer extraction for noun phrases and product-specific entities.
+
+## 4. OCR Integration
+Built-in OCR layer using **EasyOCR** for image-based PDFs and direct photo uploads.
+- **Engine:** PyTorch-based Deep Learning.
+- **Detection:** Page segmentation and text block recognition.

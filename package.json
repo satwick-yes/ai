@@ -1,0 +1,13 @@
+{
+  "name": "ai-project-root",
+  "version": "1.0.0",
+  "description": "Root package for starting backend and frontend concurrently.",
+  "scripts": {
+    "dev": "concurrently \"python backend/main.py\" \"cd web-frontend && npm run dev\"",
+    "backend": "python backend/main.py",
+    "frontend": "cd web-frontend && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

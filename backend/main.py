@@ -9,6 +9,14 @@ from utils.nlp_pipeline import calculate_hybrid_similarity, extract_skills, expa
 
 app = FastAPI(title="AI Resume Screening System")
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "message": "AI Resume Screening Backend is running",
+        "endpoints": ["/rank-resumes (POST)", "/ (GET)"]
+    }
+
 # CORS Setup for React frontend
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +52,7 @@ async def rank_resumes(
             
             # 1. Text Extraction
             text = get_text_from_file(filename, content)
-            if not text or len(text.strip()) < 50:
+            if not text or len(text.strip()) < 10:
                 print(f"Skipping {filename}: Insufficient text extracted.")
                 continue 
                 
@@ -62,7 +70,10 @@ async def rank_resumes(
             continue
 
     if not candidates:
-        raise HTTPException(status_code=400, detail="Could not extract valid text from any of the uploaded resumes.")
+        raise HTTPException(
+            status_code=400, 
+            detail="AI Detection Error: Could not extract readable text from the uploaded files. This happens if the files are heavily scanned images or if the OCR engine is still initializing. Please try again in a few moments or use text-based PDFs."
+        )
 
     try:
         # 4. Web skill expansion
@@ -87,8 +98,11 @@ async def rank_resumes(
                 "semantic_score": round(scoring_detail["semantic_score"] * 100, 2),
                 "skill_score": round(scoring_detail["skill_score"] * 100, 2),
                 "keyword_score": round(scoring_detail["keyword_score"] * 100, 2),
+                "experience_score": round(scoring_detail.get("experience_score", 0) * 100, 2),
                 "matched_skills": scoring_detail["matched_skills"],
-                "missing_skills": scoring_detail["missing_skills"]
+                "missing_skills": scoring_detail["missing_skills"],
+                "candidate_exp": scoring_detail.get("candidate_exp", 0),
+                "required_exp": scoring_detail.get("required_exp", 0)
             })
 
         # 8. Rank by score descending

@@ -56,14 +56,70 @@ def preprocess_text(text):
     
     return " ".join(cleaned_tokens)
 
+def extract_role(text):
+    """
+    Extract the primary job role from a description.
+    Example: "I am looking for an advocate" -> "advocate"
+    """
+    # Try common patterns first
+    patterns = [
+        r"(?:looking for|hiring|seek(?:ing)?)\s+([^,\.\n\r]+)",
+        r"(?:role|position|job)\s+(?:is|of|as)\s+([^,\.\n\r]+)",
+        r"^([^,\.\n\r]+?)\s+(?:required|needed|wanted)"
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            role = match.group(1).strip()
+            # Clean up leading articles
+            role = re.sub(r"^(?:a|an|the)\s+", "", role, flags=re.IGNORECASE).strip()
+            # Clean up (remove "who", "with", etc. if they slipped in)
+            role = re.split(r'\s+(?:who|with|that|for|at|to|in)\b', role, flags=re.IGNORECASE)[0]
+            if len(role.split()) <= 5: # Role titles are usually short
+                return role.strip()
+            
+    # Fallback to first few words if it's very short
+    words = text.split()
+    if len(words) < 10:
+        return text.strip()
+        
+    return None
+
+def extract_experience(text):
+    """
+    Extract years of experience from text.
+    Returns the maximum found number of years.
+    """
+    # Patterns: "5+ years", "3 years of experience", "10 yrs", etc.
+    patterns = [
+        r"(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience",
+        r"experience\s*(?:of|in)?\s*(\d+)\+?\s*(?:years?|yrs?)",
+        r"(\d+)\+?\s*(?:years?|yrs?)\s+in\b",
+        r"worked\s+for\s+(\d+)\+?\s*(?:years?|yrs?)"
+    ]
+    
+    years = []
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for m in matches:
+            try:
+                val = int(m)
+                if val < 50: # Sanity check
+                    years.append(val)
+            except:
+                pass
+    
+    return max(years) if years else 0
+
 def calculate_hybrid_similarity(job_description, resumes_text_list, web_skills=None):
     """
-    Compute hybrid similarity: 50% Semantic (MiniLM), 30% Skill Match, 20% TF-IDF Match.
+    Compute hybrid similarity: 40% Semantic, 30% Skill Match, 10% Keywords, 20% Experience.
     """
     if not resumes_text_list:
         return []
 
-    # 1. Semantic Embedding Match (50%)
+    # 1. Semantic Embedding Match
     jd_embedding = st_model.encode(job_description, convert_to_tensor=True)
     res_embeddings = st_model.encode(resumes_text_list, convert_to_tensor=True)
     semantic_scores = util.cos_sim(jd_embedding, res_embeddings)[0].cpu().numpy()
@@ -73,7 +129,10 @@ def calculate_hybrid_similarity(job_description, resumes_text_list, web_skills=N
     if web_skills:
         jd_skills.update(web_skills)
         
-    # 3. TF-IDF Keyword Match (20%)
+    # 3. Required Experience from JD
+    required_exp = extract_experience(job_description)
+    
+    # 4. TF-IDF Keyword Match
     processed_jd = preprocess_text(job_description)
     processed_resumes = [preprocess_text(rt) for rt in resumes_text_list]
     corpus = [processed_jd] + processed_resumes
@@ -88,6 +147,7 @@ def calculate_hybrid_similarity(job_description, resumes_text_list, web_skills=N
     
     for i, resume_text in enumerate(resumes_text_list):
         resume_skills = set(extract_skills(resume_text))
+        res_exp = extract_experience(resume_text)
         
         # Semantic
         sem_score = float(max(0, semantic_scores[i]))
@@ -95,29 +155,38 @@ def calculate_hybrid_similarity(job_description, resumes_text_list, web_skills=N
         # Keyword 
         kw_score = float(keyword_scores[i])
         
+        # Experience Score
+        if required_exp > 0:
+            exp_score = min(1.0, res_exp / required_exp)
+        else:
+            exp_score = min(1.0, res_exp / 8.0) if res_exp > 0 else 0.5
+            
         # Skill Match
         if not jd_skills:
             skill_score = 0.0
             matched_skills = []
             missing_skills = []
-            w_sem, w_skill, w_kw = 0.8, 0.0, 0.2
+            w_sem, w_skill, w_kw, w_exp = 0.7, 0.0, 0.1, 0.2
         else:
             matches = jd_skills.intersection(resume_skills)
             skill_score = len(matches) / len(jd_skills)
             matched_skills = list(matches)
             missing_skills = list(jd_skills - matches)
-            w_sem, w_skill, w_kw = 0.5, 0.3, 0.2
+            w_sem, w_skill, w_kw, w_exp = 0.4, 0.3, 0.1, 0.2
 
-        total_score = (sem_score * w_sem) + (skill_score * w_skill) + (kw_score * w_kw)
+        total_score = (sem_score * w_sem) + (skill_score * w_skill) + (kw_score * w_kw) + (exp_score * w_exp)
         
         final_results.append({
             "total_score": round(total_score, 4),
             "semantic_score": round(sem_score, 4),
             "skill_score": round(skill_score, 4),
             "keyword_score": round(kw_score, 4),
+            "experience_score": round(exp_score, 4),
             "matched_skills": matched_skills,
             "missing_skills": missing_skills,
-            "extracted_skills": list(resume_skills)
+            "extracted_skills": list(resume_skills),
+            "candidate_exp": res_exp,
+            "required_exp": required_exp
         })
         
     return final_results
@@ -182,10 +251,14 @@ def expand_job_with_web_skills(job_description):
     Returns a list of extracted skills.
     """
     try:
+        role = extract_role(job_description)
+        search_query = f"essential skills and requirements for {role if role else job_description}"
+        print(f"🔍 AI Web Thinking: Searching for details on '{role if role else 'General Role'}'")
+        
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            results = DDGS().text(f"{job_description} resume required skills", max_results=3)
+            results = DDGS().text(search_query, max_results=3)
         
         if results:
             combined_text = " ".join([res.get("body", "") + " " + res.get("title", "") for res in results])

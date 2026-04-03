@@ -1,0 +1,17 @@
+# Data Preprocessing Strategy
+
+The ResumeAI system utilizes a multi-stage preprocessing pipeline to convert unstructured documents (PDF, DOCX, Images) into structured semantic tokens.
+
+## 1. Text Extraction
+- **Digital Documents:** Uses `pdfplumber` and `python-docx` for high-fidelity extraction of embedded text and metadata.
+- **Scanned Documents (OCR):** If a PDF contains no digital text, the system automatically falls back to **EasyOCR** (PyTorch-based). It renders each page to a high-resolution image using `PyMuPDF` before scanning.
+- **Universal Image Support:** Native support for `.png`, `.jpg`, and `.jpeg` direct uploads.
+
+## 2. Text Normalization
+- **Cleaning:** Removes non-alphanumeric noise, handles case-insensitivity, and filters out common English stopwords.
+- **Skill Mapping:** Implements a normalization map for common variations (e.g., "Py" → "Python", "Js" → "JavaScript") to ensure consistent matching.
+- **Entity Recognition:** Uses `spaCy`'s NER (Named Entity Recognition) to identify organizations and products as potential skill keywords.
+
+## 3. NLP Feature Extraction
+- **YAKE (Unsupervised):** Extracts domain-agnostic noun phrases and importance keywords from any industry text.
+- **Sentence Embeddings:** Converts the entire cleaned job description and resume content into 384-dimensional dense vectors using the `all-MiniLM-L6-v2` transformer.

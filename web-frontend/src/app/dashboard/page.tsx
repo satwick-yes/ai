@@ -12,8 +12,11 @@ interface Candidate {
   semantic_score: number;
   skill_score: number;
   keyword_score: number;
+  experience_score: number;
   matched_skills: string[];
   missing_skills: string[];
+  candidate_exp: number;
+  required_exp: number;
 }
 
 export default function Dashboard() {
@@ -52,7 +55,8 @@ export default function Dashboard() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to rank resumes. Please ensure the backend is running.");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Failed to rank resumes. Please ensure the backend is running.");
       }
 
       const data = await response.json();
@@ -106,7 +110,7 @@ export default function Dashboard() {
                 <input
                   type="file"
                   multiple
-                  accept=".pdf,.docx"
+                  accept=".pdf,.docx,.png,.jpg,.jpeg"
                   onChange={handleFileChange}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
@@ -115,7 +119,7 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-400">
                     {files.length > 0
                       ? `${files.length} files selected`
-                      : "Drag & drop or click to upload PDF/DOCX"}
+                      : "Drag & drop or click to upload PDF/DOCX/Images"}
                   </p>
                 </div>
               </div>
@@ -173,11 +177,11 @@ export default function Dashboard() {
                 {webSkills.length > 0 && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6 p-4 glass border-blue-500/30 rounded-xl">
                     <h3 className="text-sm font-semibold text-blue-400 mb-2 flex items-center gap-2">
-                       <Languages size={16} /> Web-Searched Required Skills Detected:
+                       <Languages size={16} /> Role Intelligence: Target skills found via web search
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {webSkills.map((skill, idx) => (
-                        <span key={idx} className="bg-blue-500/20 text-blue-100 text-xs px-2 py-1 rounded border border-blue-500/30">
+                        <span key={idx} className="bg-blue-500/20 text-blue-100 text-[10px] px-2 py-0.5 rounded border border-blue-500/30">
                           {skill}
                         </span>
                       ))}
@@ -221,6 +225,14 @@ export default function Dashboard() {
 
                             <div className="flex items-center gap-8 pl-6 border-l border-white/5">
                             <div className="text-right">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-tighter mb-1">Experience</p>
+                                <span className={`text-sm font-bold ${
+                                  candidate.candidate_exp >= candidate.required_exp && candidate.required_exp > 0 ? "text-emerald-400" : "text-blue-400"
+                                }`}>
+                                  {candidate.candidate_exp}Y / {candidate.required_exp}Y
+                                </span>
+                            </div>
+                            <div className="text-right">
                                 <p className="text-[10px] text-gray-500 uppercase tracking-tighter mb-1">Relevance</p>
                                 <span className={`text-sm font-bold ${
                                 candidate.relevance === "High" ? "text-emerald-400" :
@@ -249,38 +261,26 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        <div className="pt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="pt-4 border-t border-white/10">
                             <div>
                                 <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Score Breakdown</h4>
-                                <div className="space-y-1 text-xs font-mono">
+                                <div className="space-y-1 text-xs font-mono max-w-md">
                                     <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded">
-                                        <span className="text-gray-400">Semantic AI (50%)</span>
+                                        <span className="text-gray-400">Semantic AI (40%)</span>
                                         <span className="text-blue-400">{candidate.semantic_score}%</span>
                                     </div>
                                     <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded">
-                                        <span className="text-gray-400">Skill Target (30%)</span>
+                                        <span className="text-gray-400">Role Skills (30%)</span>
                                         <span className="text-emerald-400">{candidate.skill_score}%</span>
                                     </div>
                                     <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded">
-                                        <span className="text-gray-400">Keywords (20%)</span>
+                                        <span className="text-gray-400">Keywords (10%)</span>
                                         <span className="text-purple-400">{candidate.keyword_score}%</span>
                                     </div>
-                                </div>
-                            </div>
-                            <div>
-                                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Missing Demanded Skills</h4>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {candidate.missing_skills?.length > 0 ? (
-                                        candidate.missing_skills.map((ms, msIdx) => (
-                                            <span key={msIdx} className="bg-red-500/10 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-500/20">
-                                                {ms}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-emerald-400 font-medium text-xs flex items-center gap-1">
-                                            <CheckCircle2 size={14} /> Perfect skills match!
-                                        </span>
-                                    )}
+                                    <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded">
+                                        <span className="text-gray-400">Experience (20%)</span>
+                                        <span className="text-amber-400">{candidate.experience_score}%</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
